@@ -30,10 +30,7 @@ def apply_canny(input_path,canny_type):
     output_path = os.path.join(input_path, output_filename)
     input_path = input_path+'screenshot.png'
     
-    if os.path.exists(output_path):
-        print(f"Skipping existing {output_path}")
-    else:
-        # print(f"{input_path} to {output_path}")
+    if not os.path.exists(output_path):
         try:
             if not os.path.exists(input_path):
                 print(f"Input path doesn't exists: {input_path}")

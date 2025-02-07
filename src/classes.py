@@ -133,7 +133,7 @@ class Task:
         Returns a string representation of the Task object.
     """
     
-    def __init__(self, json_file):
+    def __init__(self, json_file, path_to_mhtml, verbose=False):
         self.path = os.path.dirname(json_file) + '/'
         
                 
@@ -145,34 +145,39 @@ class Task:
         self.width = data.get("width")
         self.segmentations = Segmentations()
         self.classification_system = json_file.split('_')[-1].split('.')[0]
+        self.verbose = verbose
+        self.path_to_mhtml = path_to_mhtml
         
         # get data
         for key, polygons in data.get("segmentations", {}).items():
             segmentation = Segmentation()
             for polygon_list in polygons:
-                for polygon_coords in polygon_list:
+                for polygon_coords in polygon_list['polygon']:
                     polygon = Polygon(polygon_coords[0])
-                    # buffer polygon
-                    # polygon = polygon.buffer(-0.0001)
                     segmentation.add_polygon(polygon)
             self.segmentations.add_segmentation(key, segmentation)
             
         self.hyuclusters = data.get("nodes")
     
-    def get_clusters(self):
+    def get_clusters(self, skip_visual_nodes_only=False):
         # make clusterings
         # print('Getting pixel based Clustering...')
-        print('getting nodes pixel clustering...')
+        if self.verbose:
+            print('getting nodes pixel clustering...')
         self.clustering_pixel = pixel_based_clusterings(self.segmentations, self.path)
         
         # print('Getting node based Clustering...')
         # all nodes 
-        print('getting nodes all clustering...')
+        if self.verbose:
+            print('getting nodes all clustering...')
         self.clustering_nodes_all = nodes_clustering(self, node_visible_only=False)
         # visible nodes only
-        print('getting nodes visible clustering...')
-        self.clustering_nodes_visible = nodes_clustering(self, node_visible_only=True)
-            
+        if not skip_visual_nodes_only:
+            if self.verbose:
+                print('getting nodes visible clustering...')
+            self.clustering_nodes_visible = nodes_clustering(self, node_visible_only=True, path_to_mhtml = self.path_to_mhtml)
+        else:
+            self.clustering_nodes_visible = None
     
     def calculate_score(self, scoring_type, verbose = False):
         """
@@ -230,10 +235,11 @@ class Task:
             bcubed_result[size[5:]+'_all'] = evaluate_function(self.clustering_nodes_all['clusters'], self.clustering_nodes_all['membership'], size,  self.path, verbose = verbose)
              
         
-        # only visible nodes
-        size_names = ['size_nodes', 'size_chars']
-        for size in size_names:
-            bcubed_result[size[5:]+'_visible_only'] = evaluate_function(self.clustering_nodes_visible['clusters'], self.clustering_nodes_visible['membership'], size,  self.path, verbose = verbose)
+        if self.clustering_nodes_visible:
+            # only visible nodes
+            size_names = ['size_nodes', 'size_chars']
+            for size in size_names:
+                bcubed_result[size[5:]+'_visible_only'] = evaluate_function(self.clustering_nodes_visible['clusters'], self.clustering_nodes_visible['membership'], size,  self.path, verbose = verbose)
             
         df_bcube = pd.DataFrame(bcubed_result)
         
