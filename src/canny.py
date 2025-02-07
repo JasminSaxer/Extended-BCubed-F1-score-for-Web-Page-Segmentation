@@ -79,8 +79,11 @@ def count_edges_in_polygon(polygon,edges, buffer_default = 1):
     geojson = [mapping(buffered_polygon)]    
             
     # Open the raster and extract the values within the buffered polygon
-    with rasterio.open('/vsimem/mask.tif') as src:
-        out_image, out_transform = mask(src, geojson, crop=True)
+    try:
+        with rasterio.open('/vsimem/mask.tif') as src:
+            out_image, out_transform = mask(src, geojson, crop=True)
+    except:
+        return 'error'
 
     # Return the sum of the values in the polygon region
     return np.sum(out_image)

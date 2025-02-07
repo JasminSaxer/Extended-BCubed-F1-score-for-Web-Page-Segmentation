@@ -33,23 +33,33 @@ pip install -r requirements.txt
 
 ## Usage
 
-Use the main.py file.
 
-- For Pairwise agreement use: 
-    ```python
-    folder_path = 'path/to/your/data'
-    task = Task(folder + '/annotations.json')
-    task.calculate_pairwise_agreement()
-    ```
-- For calculation prediction score use:
+```
+usage: main.py [-h] [--folder_path FOLDER_PATH] [--class_system {FC,MC}] [--operation {prediction,pairwise_agreement}] [--per_class]
+               [--measure {F1,MaxPR,Precision,Recall}] [--use_pool] [--processes PROCESSES] [--verbose]
 
-    - Important to have 'predicted' as first key and 'ground_truth' as second key of segmentations and nodes. (instead of annotator1 in example)
-   ```python
-    folder_path = 'path/to/your/data'
-    task = Task(folder + '/annotations.json')
-    task.calculate_prediction_score()
-    ```
+options:
+  -h, --help            show this help message and exit
+  --folder_path FOLDER_PATH
+                        The path to the folder containing the data
+  --class_system {FC,MC}
+                        The class system to use (FC or MC)
+  --operation {prediction,pairwise_agreement}
+                        The operation to perform (prediction or pairwise_agreement)
+  --per_class           Calculate score per class
+  --measure {F1,MaxPR,Precision,Recall}
+                        The measure to use for per class calculation (default: F1). Can use F1, MaxPR and Recall or Precision for predicition only.
+  --use_pool            Use multiprocessing pool to process folders
+  --processes PROCESSES
+                        Number of processes to use in the pool (default: 4)
+  --verbose             Increase output verbosity
+```
 
+For example: 
+```bash
+python main.py --folder_path test_data_pairwise --class_system MC --operation pairwise_agreement
+python main.py --folder_path test_data_prediction --class_system FC --operation prediction --per_class --measure F1
+```
 
 ## Data Structure
 
@@ -58,18 +68,20 @@ The data directory should have the following structure:
 ```
 data/
 ├── page1/
-│   ├── annotations.json
+│   ├── annotations_FC.json
+│   ├── annotations_MC.json
 │   ├── dom.html
 │   └── screenshot.png
 ├── page2/
-│   ├── annotations.json
+│   ├── annotations_FC.json
+│   ├── annotations_MC.json
 │   ├── dom.html
 │   └── screenshot.png
 └── ...
 ```
 
 Each page should have its own directory containing:
-- `annotations.json`: Contains the segmentation annotations for the page.
+- `annotations_MC.json`: Contains the segmentation annotations for the page for the specific classification system.
 - `dom.html`: The HTML DOM of the web page (with hyu Indexes), extracted from the MHTML generated using [content extraction software](https://github.com/JasminSaxer/content-extraction-framework).
 - `screenshot.png`: A screenshot of the web page for visual reference.
 
@@ -106,6 +118,7 @@ Example structure:
   "nodes": {
     "annotator1": [
       {
+        "tagType": "header",
         "hyuIndex": 994
       },
       ...

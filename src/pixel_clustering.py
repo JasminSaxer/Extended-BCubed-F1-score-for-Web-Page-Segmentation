@@ -7,19 +7,13 @@ from shapely.validation import make_valid
 from src.canny import apply_canny, count_edges_in_polygon
 
 
-    
 def pixel_based_clusterings(segmentations, path):
     # Convert segmentations to a GeometryCollection        
     segmentations.geometrics = as_geometric_collection(segmentations) 
     segmentations.geometrics = make_valid(segmentations.geometrics)
     
-    # Drop Lines and points (only Polygons)
-    # segmentations.geometrics = GeometryCollection([geom for geom in segmentations.geometrics.geoms if geom.geom_type == 'Polygon'])
-    
     # Split the overlapping polygons into distinct segments
     distinct_segment = split_polygons(segmentations.geometrics.geoms)
-    # plot split segments
-    # overlay_polygons_on_image(path+'/screenshot.png', distinct_segment)
 
     # Build membership matrix
     membership = {}
@@ -88,7 +82,12 @@ def size_function(seg, unit, edges):
     if unit == 'pixel':
         return seg.area
     if unit == 'edges':
-        return count_edges_in_polygon(seg, edges)
+        edges = count_edges_in_polygon(seg, edges)
+        if edges == 'error':
+            print('ERROR: polygon not on image. (return None)')
+            return None
+        else:
+            return edges
     else:
         print(f'Size function: {unit} not implemented.')
         exit()
