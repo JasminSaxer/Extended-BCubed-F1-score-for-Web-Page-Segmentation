@@ -1,17 +1,26 @@
 
 import numpy as np
 from shapely import GeometryCollection
-from shapely.geometry import LineString
+from shapely.geometry import Polygon, MultiPolygon, GeometryCollection, LineString
 from shapely.ops import polygonize, unary_union
-from shapely.validation import make_valid
+from shapely.validation import make_valid, explain_validity
 from src.canny import apply_canny, count_edges_in_polygon
 
 
 def pixel_based_clusterings(segmentations, path):
     # Convert segmentations to a GeometryCollection        
     segmentations.geometrics = as_geometric_collection(segmentations) 
-    segmentations.geometrics = make_valid(segmentations.geometrics)
+    # segmentations.geometrics = make_valid(segmentations.geometrics)
     
+    geom = segmentations.geometrics
+    if not geom.is_valid:
+        print(f"Invalid geometry: {explain_validity(geom)}")
+
+        geom = geom.buffer(0)  # Attempt to fix the geometry
+        
+        if not geom.is_valid:
+            raise ValueError(f"Could not fix geometry: {explain_validity(geom)}")
+        
     # Split the overlapping polygons into distinct segments
     distinct_segment = split_polygons(segmentations.geometrics.geoms)
 
@@ -52,10 +61,10 @@ def pixel_based_clusterings(segmentations, path):
 def as_geometric_collection(segmentations):
     polygons = [polygon for value in segmentations.values() for polygon in value]
     # Remove duplicate polygons
-    unique_polygons = []
-    for polygon in polygons:
-        if not any(polygon.equals(existing_polygon) for existing_polygon in unique_polygons):
-            unique_polygons.append(polygon)
+    # unique_polygons = []
+    # for polygon in polygons:
+    #     if not any(polygon.equals(existing_polygon) for existing_polygon in unique_polygons):
+    #         unique_polygons.append(polygon)
         
     gc = GeometryCollection(polygons)
     return gc

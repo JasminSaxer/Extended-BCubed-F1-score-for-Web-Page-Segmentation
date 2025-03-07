@@ -3,7 +3,7 @@ import pprint
 
 from src.pixel_clustering import pixel_based_clusterings
 from src.node_clustering import nodes_clustering
-from shapely.geometry import MultiPolygon, Polygon
+from shapely.geometry import MultiPolygon, Polygon, shape
 from src.bcubed import evaluate_pairwise, evaluate_prediction
 import pandas as pd
 import os
@@ -133,7 +133,7 @@ class Task:
         Returns a string representation of the Task object.
     """
     
-    def __init__(self, json_file, path_to_mhtml, verbose=False):
+    def __init__(self, json_file, path_to_mhtml, pixel_based=True, node_based=True, verbose=False):
         self.path = os.path.dirname(json_file) + '/'
         
                 
@@ -147,37 +147,72 @@ class Task:
         self.classification_system = json_file.split('_')[-1].split('.')[0]
         self.verbose = verbose
         self.path_to_mhtml = path_to_mhtml
+        self.pixel_based = pixel_based
+        self.node_based = node_based
         
         # get data
-        for key, polygons in data.get("segmentations", {}).items():
-            segmentation = Segmentation()
-            for polygon_list in polygons:
-                for polygon_coords in polygon_list['polygon']:
-                    polygon = Polygon(polygon_coords[0])
-                    segmentation.add_polygon(polygon)
-            self.segmentations.add_segmentation(key, segmentation)
-            
-        self.hyuclusters = data.get("nodes")
+        if self.pixel_based:
+            self.visual_segments = data.get("segmentations", {})
+
+        if self.node_based:
+            self.hyuclusters = data.get("nodes")
+
     
-    def get_clusters(self, skip_visual_nodes_only=False):
+    def transform_to_shapely_polygons(self, clusters=None):
+        self.segmentations = Segmentations()
+        data_to_transform = clusters if clusters else self.visual_segments
+        # make segmentations
+        for key, polygons in data_to_transform.items():
+            segmentation = Segmentation()
+            # if data input are shapely polygons dicts
+            if len(polygons) > 0:
+                if isinstance(polygons[0]['polygon'], dict):
+                    for polygon_item in polygons:
+                        polygon = shape(polygon_item['polygon'])
+                        polygon = polygon.buffer(0)
+                        if not isinstance(polygon, Polygon):
+                            raise ValueError(f'{polygon.geom_type} are not supported. Please convert to Polygon.')
+                        segmentation.add_polygon(polygon)
+                    
+                # if data input are mulitpolygon lists        
+                else:
+                    for multipolygon_list in polygons:
+                        for polygon_item in multipolygon_list['polygon']:
+                            polygon_shapely = shape({'type': 'Polygon', 'coordinates': polygon_item})
+                            polygon = shape(polygon_shapely)
+                            polygon = polygon.buffer(0)
+                            segmentation.add_polygon(polygon)
+
+                self.segmentations.add_segmentation(key, segmentation)
+            
+    def get_clusters(self,  skip_visual_nodes_only=False):
         # make clusterings
         # print('Getting pixel based Clustering...')
-        if self.verbose:
-            print('getting nodes pixel clustering...')
-        self.clustering_pixel = pixel_based_clusterings(self.segmentations, self.path)
         
+        if self.pixel_based:
+            if self.verbose:
+                print('getting nodes pixel clustering...')
+            
+            self.transform_to_shapely_polygons()
+                
+            self.clustering_pixel = pixel_based_clusterings(self.segmentations, self.path)
+
+
         # print('Getting node based Clustering...')
         # all nodes 
-        if self.verbose:
-            print('getting nodes all clustering...')
-        self.clustering_nodes_all = nodes_clustering(self, node_visible_only=False)
-        # visible nodes only
-        if not skip_visual_nodes_only:
+        if self.node_based:
             if self.verbose:
-                print('getting nodes visible clustering...')
-            self.clustering_nodes_visible = nodes_clustering(self, node_visible_only=True, path_to_mhtml = self.path_to_mhtml)
-        else:
-            self.clustering_nodes_visible = None
+                print('getting nodes all clustering...')
+            self.clustering_nodes_all = nodes_clustering(self, node_visible_only=False)
+            
+            # visible nodes only
+            if not skip_visual_nodes_only:
+                if self.verbose:
+                    print('getting nodes visible clustering...')
+                self.clustering_nodes_visible = nodes_clustering(self, node_visible_only=True, path_to_mhtml = self.path_to_mhtml)
+            else:
+                self.clustering_nodes_visible = None
+  
     
     def calculate_score(self, scoring_type, verbose = False):
         """
@@ -197,20 +232,11 @@ class Task:
 
         # Check data for correct form
         # segmentations
+        
+        
         if scoring_type == 'prediction':
-            keys = list(self.segmentations.segmentations.keys())
-            if keys[0] != 'predicted':
-                raise ValueError('First key in segmentations data has to be "predicted".')
-            if keys[1] != 'ground_truth':
-                raise ValueError('Second key in segmentations data has to be "ground_truth".')
-            
-            # nodes
-            keys = list(self.hyuclusters.keys())
-            if keys[0] != 'predicted':
-                raise ValueError('First key in nodes data has to be "predicted".')
-            if keys[1] != 'ground_truth':
-                raise ValueError('Second key in nodes data has to be "ground_truth".')
-            
+            clusters = self.get_node_or_pixel_clusters()
+            self.check_data_for_prediction(clusters)
             evaluate_function = evaluate_prediction
             
         elif scoring_type == 'pairwise_agreement':
@@ -218,32 +244,45 @@ class Task:
         
         else:
             raise ValueError("Invalid scoring_type. Expected 'prediction' or 'pairwise_agreement'.")
-     
+         
+ 
         # calculate bcubed
         bcubed_result = {}
         
-        # pixel-based clustering
-        size_names = ['size_edges_fine', 'size_edges_coarse', 'size_pixel']
-        if verbose:
-            print(f'extended Bcubed results for {self.path}:')
-        for size in size_names:
-            bcubed_result[size[5:]] = evaluate_function(self.clustering_pixel['clusters'], self.clustering_pixel['membership'], size, self.path, verbose = verbose)
+        size_names = []
+        # check if have pixel-based clustering 
+        if hasattr(self, 'clustering_pixel'):
+            cluster_keys = self.clustering_pixel['clusters'][0].keys()
+            sizes = [size for size in cluster_keys if size.startswith('size')]
+            size_names.extend(sizes)
         
-        # all nodes
-        size_names = ['size_nodes', 'size_chars']
-        for size in size_names:
-            bcubed_result[size[5:]+'_all'] = evaluate_function(self.clustering_nodes_all['clusters'], self.clustering_nodes_all['membership'], size,  self.path, verbose = verbose)
-             
+        # check if have node-based clustering
+        if hasattr(self, 'clustering_nodes_all'):
+            cluster_keys = self.clustering_nodes_all['clusters'][0].keys()
+            sizes = [size for size in cluster_keys if size.startswith('size')]
+            size_names.extend(sizes)
         
-        if self.clustering_nodes_visible:
-            # only visible nodes
-            size_names = ['size_nodes', 'size_chars']
-            for size in size_names:
-                bcubed_result[size[5:]+'_visible_only'] = evaluate_function(self.clustering_nodes_visible['clusters'], self.clustering_nodes_visible['membership'], size,  self.path, verbose = verbose)
+        
+        for size in size_names:
+            
+            # pixel_based
+            if 'edges' in size or 'pixel' in size:
+                result_name = size[5:]
+                clusters_data = self.clustering_pixel
+            # node_based
+            else:
+                result_name = size[5:] + '_all'
+                clusters_data = self.clustering_nodes_all
+                
+                if self.clustering_nodes_visible:
+                    result_name = size[5:] + '_visible_only'
+                    clusters_data = self.clustering_nodes_visible
+                    
+            bcubed_result[result_name] = evaluate_function(clusters_data['clusters'], clusters_data['membership'], size, self.path, verbose = verbose)
+           
+                
             
         df_bcube = pd.DataFrame(bcubed_result)
-        
-            
         df_bcube.to_csv(self.path + f'{self.classification_system}_{scoring_type}_results.csv')
         
         return df_bcube
@@ -253,39 +292,30 @@ class Task:
         # Check data for correct form
         # segmentations
         if scoring_type == 'prediction':
-            keys = list(self.segmentations.segmentations.keys())
-            if keys[0] != 'predicted':
-                raise ValueError('First key in segmentations data has to be "predicted".')
-            if keys[1] != 'ground_truth':
-                raise ValueError('Second key in segmentations data has to be "ground_truth".')
-            
-            # nodes
-            keys = list(self.hyuclusters.keys())
-            if keys[0] != 'predicted':
-                raise ValueError('First key in nodes data has to be "predicted".')
-            if keys[1] != 'ground_truth':
-                raise ValueError('Second key in nodes data has to be "ground_truth".')
-            
+            clusters = self.get_node_or_pixel_clusters()
+            self.check_data_for_prediction(clusters)
             evaluate_function = evaluate_prediction
             
         elif scoring_type == 'pairwise_agreement':
+            clusters = self.get_node_or_pixel_clusters()
             evaluate_function = evaluate_pairwise
         
         else:
             raise ValueError("Invalid scoring_type. Expected 'prediction' or 'pairwise_agreement'.")
         
-        tagtypes = sorted(list(set([s['tagType'] for segments in self.hyuclusters.values() for s in segments])))
+        tagtypes = sorted(list(set([s['tagType'] for segments in clusters.values() for s in segments])))
+
         if len(tagtypes) == 0:
             return 
         
-        self.hyuclusters_bytagtype = {t:{} for t in tagtypes}
+        self.clusters_bytagtype = {t:{} for t in tagtypes}
         for tagtype in tagtypes:
-            self.hyuclusters_bytagtype[tagtype] = {}
-            for annotator in self.hyuclusters:
-                self.hyuclusters_bytagtype[tagtype][annotator] = [segment for segment in self.hyuclusters[annotator] if segment['tagType'] == tagtype]
+            self.clusters_bytagtype[tagtype] = {}
+            for annotator in clusters:
+                self.clusters_bytagtype[tagtype][annotator] = [segment for segment in clusters[annotator] if segment['tagType'] == tagtype]
 
         # compare the differerent classes with each other 
-        annotator_pairs = list(combinations(self.hyuclusters.keys(), 2))
+        annotator_pairs = list(combinations(clusters.keys(), 2))
         
         results = {f'{annotx}_{annoty}':{} for annotx, annoty in annotator_pairs}
         
@@ -295,20 +325,54 @@ class Task:
             
             for t in results[f'{annotx}_{annoty}'].keys():
                 for t_tocompare in tagtypes:
-                    self.hyuclusters = {annotx: self.hyuclusters_bytagtype[t][annotx],
-                                        annoty: self.hyuclusters_bytagtype[t_tocompare][annoty]}
-
-                    if len(self.hyuclusters[annotx]) == 0 and len(self.hyuclusters[annoty]) == 0:
+                    clusters = {annotx: self.clusters_bytagtype[t][annotx],
+                                        annoty: self.clusters_bytagtype[t_tocompare][annoty]}
+                    
+                    # check for empty clusters
+                    none_predicted = len(clusters[annotx]) == 0
+                    none_groundtruth = len(clusters[annoty]) == 0
+                    
+                    # if none predicted and none groundtruth continue                                          
+                    if none_predicted and none_groundtruth:
                         continue
-                    nodes_all_clusters = nodes_clustering(self, node_visible_only=False)
                     
-                    eval_res = evaluate_function(nodes_all_clusters['clusters'], nodes_all_clusters['membership'],
-                            'size_nodes', self.path, verbose=verbose)
-                    
+                    if scoring_type == 'prediction':
+                        # if groundtruth or predicted is empty set to 0
+                        if none_groundtruth or none_predicted:
+                            results[f'{annotx}_{annoty}'][t][t_tocompare] = 0
+                            continue    
+                            
+                    if self.node_based:
+                        atomic_element = 'nodes'
+                        self.hyuclusters = clusters
+                        clustering_res = nodes_clustering(self, node_visible_only=False)
+                        
+                    elif self.pixel_based:
+                        atomic_element= 'pixel'
+                        # make new segmentations                       
+                        self.transform_to_shapely_polygons(clusters)
+                        
+                        # for key, polygons in clusters.items():
+                        #     segmentation = Segmentation()
+                        #     for polygon_list in polygons:
+                        #         for polygon_coords in polygon_list['polygon']:
+                        #             polygon = Polygon(polygon_coords[0])
+                        #             segmentation.add_polygon(polygon)
+                        #     self.segmentations.add_segmentation(key, segmentation)
+                            
+                        clustering_res = pixel_based_clusterings(self.segmentations, self.path)
+                                        
+                    else:
+                        raise ValueError(f'WARNING: {atomic_element} not implemented. (choose nodes or pixel)')
+
+                        
+                    eval_res = evaluate_function(clustering_res['clusters'], clustering_res['membership'],
+                                f'size_{atomic_element}', self.path, verbose=verbose)
+                        
                     # get measure
                     res_measure = eval_res.get(measure)
                     if res_measure is None:
-                        print(f'Measure {measure} not implemente for {scoring_type}! Try one of: {eval_res.keys()}')
+                        raise ValueError(f'Measure {measure} not implemente for {scoring_type}! Try one of: {eval_res.keys()}')
                         
                     else:
                         results[f'{annotx}_{annoty}'][t][t_tocompare] = res_measure
@@ -342,9 +406,31 @@ class Task:
             
         mean = sum / devide
                         
-        mean.to_csv(self.path + f'{self.classification_system}_{measure}_{scoring_type}_results_per_classes_all_nodes.csv')
+        mean.to_csv(self.path + f'{self.classification_system}_{measure}_{scoring_type}_results_per_classes_{atomic_element}.csv')
+    
+    
+    
+    def get_node_or_pixel_clusters(self):
+        clusters = None
+        if self.node_based:
+            clusters = self.hyuclusters
         
+        if self.pixel_based:
+            clusters = self.visual_segments
         
+        return clusters
+    
+    def check_data_for_prediction(self, clusters):
+        
+        # check clusters for correct form of keys
+        keys = list(clusters.keys())
+        
+        # print(clusters)
+        if keys[0] != 'predicted':
+            raise ValueError('First key in nodes data has to be "predicted".')
+        if keys[1] != 'ground_truth':
+            raise ValueError('Second key in nodes data has to be "ground_truth".')
+    
     def __repr__(self):
         return pprint.pformat(self.__dict__, indent=4)
     
