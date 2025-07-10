@@ -177,13 +177,19 @@ class Task:
                 # if data input are mulitpolygon lists        
                 else:
                     for multipolygon_list in polygons:
-                        for polygon_item in multipolygon_list['polygon']:
+                        for polygon_item in multipolygon_list['polygon']:                         
                             polygon_shapely = shape({'type': 'Polygon', 'coordinates': polygon_item})
                             polygon = shape(polygon_shapely)
                             polygon = polygon.buffer(0)
-                            segmentation.add_polygon(polygon)
-
-                self.segmentations.add_segmentation(key, segmentation)
+                            
+                            # split multipolygon into single polygons
+                            if isinstance(polygon, MultiPolygon):
+                                for poly in polygon.geoms:
+                                    segmentation.add_polygon(poly)
+                            else:
+                                segmentation.add_polygon(polygon)
+                   
+                self.segmentations.add_segmentation(key, segmentation)               
             
     def get_clusters(self,  skip_visual_nodes_only=False):
         # make clusterings
@@ -351,7 +357,7 @@ class Task:
                         atomic_element= 'pixel'
                         # make new segmentations                       
                         self.transform_to_shapely_polygons(clusters)
-                        
+
                         # for key, polygons in clusters.items():
                         #     segmentation = Segmentation()
                         #     for polygon_list in polygons:
