@@ -494,7 +494,7 @@ class Task:
                             # get measure
                             res_measure = eval_res[atomic_element].get(measure, None)
                             if res_measure is None:
-                                raise ValueError(f'Measure {measure} not implemente for {scoring_type}! Try one of: {eval_res.keys()}')
+                                raise ValueError(f'Measure {measure} not implemente for {scoring_type}! Try one of: {eval_res[atomic_element].keys()}')
                                 
                             else:
                                 results[atomic_element][f'{annotx}_{annoty}'][t][t_tocompare] = res_measure
