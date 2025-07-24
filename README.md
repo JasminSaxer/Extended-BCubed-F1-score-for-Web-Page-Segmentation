@@ -10,7 +10,7 @@ This project takes as input for each segment:
 - annotations as hyu values (hyu values are specific for each node, and added by using this [content extraction software](https://github.com/JasminSaxer/content-extraction-framework).)
 
 Thus the BCubed F1-score which are pixel-based (pixel, edges_fine, edges_coarse) are calculated using the polygons, 
-and the node-based (node, characters) are calculated using the hyu values (speific nodes).
+and the node-based (node, characters) are calculated using the hyu values (specific if for each node).
 
 ## Description
 
@@ -21,6 +21,7 @@ and the node-based (node, characters) are calculated using the hyu values (speif
     - classes.py: Defines the main classes used in the project, such as Task, Segmentation, and Segmentations.
     - node_clustering.py: Implements node-based clustering.
     - pixel_clustering.py: Implements pixel-based clustering.
+    - additional_stats.py: Implements FN and FP relativ to total segmentation size of the page.
 
 The evaluation results are saved in bcubed_res.csv files within each test data folder. The results include B-Cubed F1 and Max scores for each page.
 
@@ -77,6 +78,8 @@ options:
   --pixel_based         Use pixel based atomic element
   --node_based          Use node based atomic element
   --add_visible_nodes   Add measuring only visible nodes.
+  --folder_to_groundtruth FOLDER_TO_GROUNDTRUTH
+                        Path to the ground truth folder for ground truth data, if in seperate folder and file.
 ```
 
 For example: 
@@ -107,12 +110,43 @@ path/to/mhtml/
 └── ...
 
 ```
+Or with additional data folder for static files: 
+
+```
+additional_folder/
+├── page1/
+│   ├── <filename>.json
+│   ├── <filename>.html
+│   └── <filename>.png
+├── page2/
+│   ├── <filename>json
+│   ├── <filename>.html
+│   └── <filename>.png
+└── ...
+
+data/
+├── page1/
+│   └── annotations_{file_postfix}.json
+├── page2/
+│   └── annotations_{file_postfix}.json
+└── ...
+
+path/to/mhtml/
+├── page1.mhtml
+├── page2.mhtml
+└── ...
+```
 
 Each page should have its own directory containing:
 - `annotations_{file_postfix}.json`: Contains the segmentation annotations for the page with the specific file postfix.
 - `dom.html`: The HTML DOM of the web page (with hyu Indexes), extracted from the MHTML generated using [content extraction software](https://github.com/JasminSaxer/content-extraction-framework).
 - `screenshot.png`: A screenshot of the web page for visual reference.
 - `path/to/mhtml/`: Containing the paths to MHTML only needed for visible nodes only calculations.
+
+Option for additional data folder for the static files:
+- `dom.html`: The HTML DOM of the web page (with hyu Indexes), extracted from the MHTML generated using [content extraction software](https://github.com/JasminSaxer/content-extraction-framework).
+- `screenshot.png`: A screenshot of the web page for visual reference.
+- `ground_truth.json`: An additional annotations json for only the ground truth for prediction calculations.
 
 ### annotations.json
 
@@ -200,6 +234,184 @@ Polygon as shapely polygons dicts (without classes (tagTypes)):
   }
 }
 
+```
+
+### annotations.json for prediction
+> **Note:**  
+> The keys for the `segmentations` and `nodes` dictionaries must be **`predicted`** and **`ground_truth`**.
+
+```json
+{
+  "id": "66ffde79306dfe2088fd9ff7",
+  "height": 3716,
+  "width": 2560,
+  "segmentations": {
+    "predicted": [
+      {
+        "polygon": [
+          [
+            [
+              [480,0],
+              [2080,0],
+              [2080,221],
+              [480,221],
+              [480,0]
+            ]
+          ]
+        ],
+        "tagType": "header" 
+      }, ...
+    ], 
+    "ground_truth": [
+      {
+        "polygon": [
+          [
+            [
+              [480,0],
+              [2080,0],
+              [2080,221],
+              [480,221],
+              [480,0]
+            ]
+          ]
+        ],
+        "tagType": "header" 
+      },
+      ...
+    ] 
+  },
+  "nodes": {
+    "predicted": [
+      {
+        "tagType": "header",
+        "hyuIndex": 994
+      },
+      ...
+    ],
+    "ground_truth": [
+      {
+        "tagType": "header",
+        "hyuIndex": 994
+      },
+      ...
+    ]
+  }
+}
+
+```
+If you are using a separate folder for ground truth data, simply omit the `ground_truth` entries from `annotations.json` and place them in a dedicated `ground_truth.json` file instead, structured as follows:
+
+```json
+{
+  "id": "66ffde79306dfe2088fd9ff7",
+  "height": 3716,
+  "width": 2560,
+  "segmentations": {
+    "ground_truth": [
+      {
+        "polygon": [
+          [
+            [
+              [480,0],
+              [2080,0],
+              [2080,221],
+              [480,221],
+              [480,0]
+            ]
+          ]
+        ],
+        "tagType": "header" 
+      },
+      ...
+    ] 
+  },
+  "nodes": {
+    "ground_truth": [
+      {
+        "tagType": "header",
+        "hyuIndex": 994
+      },
+      ...
+    ]
+  }
+}
+```
+
+## Results
+
+#### Without classes
+
+- **Per-page results:** For each page, a results file is generated containing the BCubed scores (e.g., `{file_postfix}_{operation}_results.csv`).
+- **Aggregate results:** An additional file summarizes the average BCubed scores across all pages in the data results folder (e.g., `allfolders_{file_postfix}_{operation}.csv`).
+
+#### Per classes
+
+##### Per-page results
+
+Each page directory contains:
+
+- **Per-class measure scores:**  
+  `{file_postfix}_{measure}_{operation}_results_per_classes.csv`  
+  Contains F1 scores for each class and evaluation method (e.g., pixel, node, chars, edges_fine, edges_coarse).
+
+- **Per-class False Positive/Negative rates (only for prediction per classes):**  
+  `{file_postfix}_FP_FN_rel_prediction_results_per_classes.csv`  
+  Reports the relative False Positive (FP) and False Negative (FN) rates for each class, normalized by the total segmentation size.
+
+- **Per-method confusion matrices:**  
+  `{file_postfix}_{measure}_{operation}_confmatrix/`  
+  A folder containing confusion matrices (`.csv` files) for each atomic element method:
+  ```
+  FC_F1_{operation}_confmatrix/
+  ├── nodes.csv
+  ├── chars.csv
+  ├── pixel.csv
+  ├── edges_fine.csv
+  └── edges_coarse.csv
+  ```
+
+##### Aggregated results
+
+A separate results folder (e.g., `data_{operation}_results/`) contains the averaged results:
+
+- **Aggregated per-class scores:**  
+  `allfolders_{file_postfix}_{measure}_{operation}_results_per_classes.csv`  
+  Summarizes the average per-class scores across all pages.
+
+- **Aggregated confusion matrices:**  
+  `allfolders_{file_postfix}_{measure}_{operation}_confmatrix/`  
+  Contains averaged confusion matrices for each evaluation method:
+  ```
+  allfolders_{file_postfix}_{measure}_{operation}_confmatrix/
+  ├── nodes.csv
+  ├── chars.csv
+  ├── pixel.csv
+  ├── edges_fine.csv
+  └── edges_coarse.csv
+  ```
+
+##### Example directory structure only results
+```
+data/
+├── page1/
+│   ├── {file_postfix}_{measure}_{operation}_results_per_classes.csv
+│   ├── {file_postfix}_FP_FN_rel_prediction_results_per_classes.csv  
+│   └── {file_postfix}_{measure}_{operation}_confmatrix/
+│       ├── nodes.csv
+│       ├── chars.csv
+│       ├── pixel.csv
+│       ├── edges_fine.csv
+│       └── edges_coarse.csv
+
+data_{operation}_results/
+├── allfolders_{file_postfix}_{measure}_{operation}_results_per_classes.csv
+├── allfolders_{file_postfix}_FP_FN_rel_prediction_results_per_classes.csv
+└── allfolders_{file_postfix}_{measure}_{operation}_confmatrix/
+    ├── nodes.csv
+    ├── chars.csv
+    ├── pixel.csv
+    ├── edges_fine.csv
+    └── edges_coarse.csv
 ```
 
 ## License

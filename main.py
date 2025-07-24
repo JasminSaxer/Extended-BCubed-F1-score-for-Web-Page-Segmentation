@@ -5,30 +5,29 @@ from multiprocessing import Pool
 from src.classes import Task
 import pandas as pd
 
-def process_folder(folder, file_postfix, operation, per_class, verbose, path_to_mhtml='', measure='F1', node_based=True, pixel_based=True, add_visible_nodes=False):
+def process_folder(folder, file_postfix, operation, per_class, verbose, path_to_mhtml='', measure='F1', node_based=True, pixel_based=True, add_visible_nodes=False, folder_to_additional_data=None):
     path_annotations = folder + f'/annotations_{file_postfix}.json'
-    
+
     # default both pixel_based and node_based are True
     if path_to_mhtml == '' and node_based and add_visible_nodes:
         raise ValueError(f'Path to HTML is: {path_to_mhtml}. You have to define the path to mhtml for node based calculations with visible nodes only!')
     
-                
+    task = Task(path_annotations, pixel_based=pixel_based, node_based=node_based, path_to_mhtml=path_to_mhtml, folder_to_additional_data=folder_to_additional_data, verbose = verbose)
+
     if per_class:
-        task = Task(path_annotations, pixel_based=pixel_based, node_based=node_based, verbose = verbose, path_to_mhtml=path_to_mhtml)
         task.get_clusters_and_calculate_score_per_class(operation, verbose, measure=measure)
     else:
-
-        task = Task(path_annotations, path_to_mhtml, verbose=verbose, pixel_based=pixel_based, node_based=node_based)  
         skip_visible_nodes = not add_visible_nodes              
         task.get_clusters(skip_visual_nodes_only=skip_visible_nodes)
         task.calculate_score(operation, verbose)
 
 
-def get_mean_overall(main_folder, file_postfix, operation):
+def get_mean_overall(main_folder, file_postfix, operation, results_folder):
     folders = [f.path for f in os.scandir(main_folder) if f.is_dir()]
     df_fb3 = {}
     df_max = {}
 
+    
     for folder in folders:
         df = pd.read_csv(folder + f'/{file_postfix}_{operation}_results.csv', index_col=0)
         pid = folder.split('/')[-1]
@@ -39,42 +38,69 @@ def get_mean_overall(main_folder, file_postfix, operation):
     df_max = pd.DataFrame(df_max).T
 
 
-    print(f'Fb3:\n{df_fb3.mean().round(3)}\n')
-    print(f'Max:\n{df_max.mean().round(3)}')
+
+    # Create a new DataFrame to store the averages of Fb3 and Max
+    results = pd.DataFrame({
+        'Fb3_mean': df_fb3.mean(),
+        'Max_mean': df_max.mean()
+    }).T
     
-    path_fb3 = os.path.join(os.path.dirname(main_folder), f'{file_postfix}_fb3_{operation}_results_allfolders.csv')
-    df_fb3.to_csv(path_fb3)
+    print(results.round(3))
+    path= os.path.join(results_folder, f'allfolders_{file_postfix}_{operation}.csv')
+    results.to_csv(path)
     
-    path_max = os.path.join(os.path.dirname(main_folder), f'{file_postfix}_max_{operation}_results_allfolders.csv')
-    df_max.to_csv(path_max)
-    
-def get_mean_over_classes(main_folder, classification, measure, scoring_type, pixel_based):
+def get_mean_over_classes(main_folder, classification, measure, scoring_type, results_folder):
     folders = [f.path for f in os.scandir(main_folder) if f.is_dir()]
 
-    if pixel_based:
-        atomic_element = 'pixel'
-    else:
-        atomic_element = 'nodes'
-        
-    df_sum = pd.DataFrame()
-    devide = df_sum.notna().astype(int)
-    df_sum = df_sum.fillna(0)
+    res_allfolders_classes = {}
+    for atomic_element in ['nodes', 'chars', 'pixel', 'edges_fine', 'edges_coarse']:
+        df_sum = pd.DataFrame()
+        devide = df_sum.notna().astype(int)
+        df_sum = df_sum.fillna(0)
 
-    for folder in tqdm(folders):
-        file_name = f'{classification}_{measure}_{scoring_type}_results_per_classes_{atomic_element}.csv'
-        path = os.path.join(folder, file_name)
+        for folder in tqdm(folders):
+            confmatrix_folder = f'{classification}_{measure}_{scoring_type}_confmatrix'
+            file_name = f'{atomic_element}.csv'
+            path = os.path.join(folder,confmatrix_folder, file_name)
+            
+            if os.path.exists(path):
+                df = pd.read_csv(path, index_col=0)
+                devide = devide.add(df.notna().astype(int), fill_value=0)
+                df_sum  = df_sum.add(df.fillna(0), fill_value=0)
+            else:
+                print(f'{path} does not exist.')
+            
+        mean = df_sum / devide
+        res_path_conf_matrix = os.path.join(results_folder, f'allfolders_{classification}_{measure}_{scoring_type}_confmatrix')
+        os.makedirs(res_path_conf_matrix, exist_ok=True)
+        mean_path = os.path.join(res_path_conf_matrix, f'{atomic_element}.csv')
+        mean.to_csv(mean_path)
         
-        if os.path.exists(path):
-            df = pd.read_csv(path, index_col=0)
-            devide = devide.add(df.notna().astype(int), fill_value=0)
-            df_sum  = df_sum.add(df.fillna(0), fill_value=0)
-        else:
-            print(f'{path} does not exist.')
+        # get only diagonal values
+        diagonal = mean.values.diagonal()
+        res_allfolders_classes[atomic_element] = pd.Series(diagonal, index = mean.index)
+
+    df_res_per_class = pd.DataFrame(res_allfolders_classes)
+    df_res_per_class.loc['Mean'] = df_res_per_class.mean()
+    print(df_res_per_class.round(3))
+    res_path = os.path.join(results_folder, f'allfolders_{classification}_{measure}_{scoring_type}_results_per_classes.csv')
+    df_res_per_class.to_csv(res_path)
         
-    mean = df_sum / devide
-    print(mean.round(3))   
-    mean_path = os.path.join(os.path.dirname(main_folder), f'{classification}_{measure}_{scoring_type}_results_per_classes_{atomic_element}_allfolders.csv')
-    mean.to_csv(mean_path)
+        
+def get_mean_FN_FP(main_folder, file_postfix, operation, results_folder):
+    folders = [f.path for f in os.scandir(main_folder) if f.is_dir()]
+    df_all = pd.DataFrame()
+    
+    for folder in folders:
+        df = pd.read_csv(folder + f'/{file_postfix}_FP_FN_rel_{operation}_results_per_classes.csv', index_col=0)
+        df_all = pd.concat([df_all, df])
+    
+    df_all = df_all.groupby(df_all.index).mean()
+    
+    print(df_all.round(3))    
+    # Save the results to a CSV file
+    path = os.path.join(results_folder, f'allfolders_{file_postfix}_FP_FN_rel_{operation}_results_per_classes.csv')
+    df_all.to_csv(path)        
     
 def process_folder_wrapper(args):
     return process_folder(*args)
@@ -103,7 +129,8 @@ if __name__ == '__main__':
     parser.add_argument('--pixel_based', action='store_true', help='Use pixel based atomic element')
     parser.add_argument('--node_based', action='store_true', help='Use node based atomic element')
     parser.add_argument('--add_visible_nodes', action='store_true', help='Add measuring only visible nodes.')
-    
+    parser.add_argument('--folder_to_additional_data', type=str, default=None, help='Path to the additional data folder for static files (dom.html, screenshot.png, ground_truth.json).')
+
     args = parser.parse_args()
 
     folders = [f.path for f in os.scandir(args.folder_path) if f.is_dir()]
@@ -127,13 +154,22 @@ if __name__ == '__main__':
             pass
     else:
         for folder in tqdm(folders):
-            if args.operation == 'prediction' or args.per_class:
-                if args.pixel_based and args.node_based:
-                    raise ValueError('WARNING: You cannot define both pixel_based and node_based for Prediction or per_class calculations')
-            
-            process_folder(folder, args.file_postfix, args.operation, args.per_class, args.verbose, args.path_to_mhtml, args.measure, node_based=args.node_based, pixel_based=args.pixel_based, add_visible_nodes = args.add_visible_nodes)
+            process_folder(folder, 
+                           args.file_postfix, 
+                           args.operation, 
+                           args.per_class, 
+                           args.verbose, 
+                           args.path_to_mhtml, 
+                           args.measure, 
+                           node_based=args.node_based, pixel_based=args.pixel_based, add_visible_nodes = args.add_visible_nodes, 
+                           folder_to_additional_data = args.folder_to_additional_data)
 
+    results_folder = os.path.join(os.path.dirname(args.folder_path), f'{os.path.basename(args.folder_path)}_results')
+    os.makedirs(results_folder, exist_ok=True)
+    
     if not args.per_class:
-        get_mean_overall(args.folder_path, args.file_postfix, args.operation)
+        get_mean_overall(args.folder_path, args.file_postfix, args.operation, results_folder)
     else:
-        get_mean_over_classes(args.folder_path, args.file_postfix, args.measure, args.operation, args.pixel_based)
+        get_mean_over_classes(args.folder_path, args.file_postfix, args.measure, args.operation, results_folder)
+        if args.operation == 'prediction':
+            get_mean_FN_FP(args.folder_path, args.file_postfix, args.operation, results_folder)

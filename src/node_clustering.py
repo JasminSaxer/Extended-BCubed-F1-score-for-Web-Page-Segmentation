@@ -21,8 +21,9 @@ def nodes_clustering(task, node_visible_only=False, path_to_mhtml=''):
             - 'membership' (dict): Subsets of membership information for each annotator.
     """
     
-    # Parse the DOM tree
-    with open(f"{task.path}dom.html", 'r') as html_file:
+
+   # Parse the DOM tree
+    with open(task.path_to_html, 'r') as html_file:
         html = html_file.read()
     dom = etree.HTML(html)
     
@@ -51,6 +52,7 @@ def nodes_clustering(task, node_visible_only=False, path_to_mhtml=''):
                 print('------------------- ERROR hyu not found'+ str(node_hyu) +'  '+ str(task.id))
                 continue
             if node[0].text and node[0].text.strip():
+                # getting length of text in the node
                 text_nodes[node_hyu] = len(node[0].text.strip())
             
             # start hyu values with this node    
@@ -109,7 +111,7 @@ def nodes_clustering(task, node_visible_only=False, path_to_mhtml=''):
 
 
     # Define subsets for each annotator
-    membership_subsets = get_subsets(res, unique_clusters)  # Placeholder for subset logic
+    membership_subsets = get_subsets(res, unique_clusters) 
     clusterings = {'clusters': [], 
                    'membership': membership_subsets}
     
