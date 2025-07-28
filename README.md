@@ -63,7 +63,7 @@ options:
   --folder_path FOLDER_PATH
                         The path to the folder containing the data
   --file_postfix FILE_POSTFIX
-                        The name where files are stored : annotations_{file_postfix}.json (default: )
+                        The name where files are stored : annotations_{file_postfix}.json 
   --operation {prediction,pairwise_agreement}
                         The operation to perform (prediction or pairwise_agreement)
   --path_to_mhtml PATH_TO_MHTML
@@ -115,11 +115,11 @@ Or with additional data folder for static files:
 ```
 additional_folder/
 ├── page1/
-│   ├── <filename>.json
+│   ├── annotations_{file_postfix}.json
 │   ├── <filename>.html
 │   └── <filename>.png
 ├── page2/
-│   ├── <filename>json
+│   ├── annotations_{file_postfix}.json
 │   ├── <filename>.html
 │   └── <filename>.png
 └── ...

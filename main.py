@@ -129,7 +129,7 @@ if __name__ == '__main__':
     parser.add_argument('--pixel_based', action='store_true', help='Use pixel based atomic element')
     parser.add_argument('--node_based', action='store_true', help='Use node based atomic element')
     parser.add_argument('--add_visible_nodes', action='store_true', help='Add measuring only visible nodes.')
-    parser.add_argument('--folder_to_additional_data', type=str, default=None, help='Path to the additional data folder for static files (dom.html, screenshot.png, ground_truth.json).')
+    parser.add_argument('--folder_to_additional_data', type=str, default=None, help='Path to the additional data folder for static files (dom.html, screenshot.png, groundtruth_annots_FC.json).')
 
     args = parser.parse_args()
 
