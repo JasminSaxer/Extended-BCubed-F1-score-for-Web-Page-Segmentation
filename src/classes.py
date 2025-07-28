@@ -175,7 +175,7 @@ class Task:
             if os.path.exists(folder):
                 additional_filenames = os.listdir(folder)
                 for file in additional_filenames:
-                    if file.endswith('.json'):
+                    if file.endswith('.json') and self.classification_system in file:
                         additional_json_file = os.path.join(folder, file)
                     if file.endswith('.html'):
                         additional_html_file = os.path.join(folder, file)
